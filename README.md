@@ -93,6 +93,60 @@ kubectl -n monitoring port-forward svc/prometheus-stack-kube-prom-prometheus 909
 
 Dashboards : dans Grafana, *Dashboards > New > Import*, puis charger les JSON de `monitoring/dashboards/`.
 
+## CI/CD
+
+```
+push main (recouvra-backend / recouvra-frontend)
+  → tests (backend) → build + push ghcr.io/rahmdridicode/recouvra-<composant>:sha-<7 car.>
+  → repository_dispatch "deploy-image" {component, tag} vers ce dépôt
+  → .github/workflows/deploy.yml (runner self-hosted Windows) → helm upgrade du seul composant concerné
+```
+
+### Configuration manuelle (une seule fois)
+
+| Où | Quoi |
+|---|---|
+| Dépôts backend et frontend, *Settings > Secrets > Actions* | secret `DEPLOYMENT_TOKEN` (PAT fine-grained limité à `recouvra-deployment`, permission *Contents: Read and write*) |
+| Dépôts backend et frontend | rien d'autre : `GITHUB_TOKEN` est fourni automatiquement (`packages: write` déclaré dans le workflow) |
+| Dépôt deployment, *Settings > Actions > Runners* | runner self-hosted Windows en ligne, avec `minikube`, `kubectl` et `helm` (≥ 3.14) dans le `PATH` du compte qui l'exécute |
+| Cluster, namespace `recouvra` | Secrets `ghcr-secret` (PAT `read:packages`) et `recouvra-secrets` (voir *Secrets*) |
+| GHCR | si le paquet n'est pas lié au dépôt, l'ajouter en accès pour que le PAT puisse le lire |
+
+### Premier déploiement (bootstrap)
+
+`values.yaml` contient des tags par défaut (`v2`) qui n'existent pas sur GHCR. Une fois les deux CI passées,
+déployer une première fois les deux tags (visibles dans *Packages* sur GitHub) :
+
+```powershell
+helm upgrade --install recouvra helm/recouvra -n recouvra `
+  --set backend.image.tag=sha-xxxxxxx --set frontend.image.tag=sha-yyyyyyy
+```
+
+Ensuite chaque push met à jour un seul composant : `--reset-then-reuse-values` conserve le tag déjà déployé de l'autre.
+Si un dispatch arrive avant ce bootstrap, le déploiement échoue et Helm revient en arrière (`--atomic`) : sans conséquence.
+
+### Rollback
+
+```powershell
+helm history recouvra -n recouvra
+helm rollback recouvra <révision> -n recouvra
+kubectl rollout status deployment/backend -n recouvra
+```
+
+Le déploiement automatique utilise `--atomic` : en cas d'échec ou de timeout (5 min), Helm restaure la révision précédente.
+
+### Dépannage CI/CD
+
+| Symptôme | Action |
+|---|---|
+| `notify-deployment` : HTTP 404 ou 403 | `DEPLOYMENT_TOKEN` absent, expiré ou sans accès à ce dépôt. |
+| Le workflow `Deploy` ne démarre pas | `deploy.yml` doit être sur la branche par défaut de ce dépôt ; le runner doit être en ligne. |
+| `Minikube n'est pas démarré` | `minikube start --driver=docker` sur la machine du runner. |
+| Contexte kubectl inattendu | Le service du runner n'utilise pas le même `~/.kube/config` que ton compte. |
+| `ImagePullBackOff` / `unauthorized` | `ghcr-secret` absent ou PAT sans `read:packages` ; vérifier que le tag existe sur GHCR. |
+| `ImagePullBackOff` sur le composant non déployé | Bootstrap non fait (tag par défaut `v2` inexistant). |
+| Erreur `helm upgrade` sur `--reset-then-reuse-values` | Helm trop ancien (≥ 3.14 requis). |
+
 ## Dépannage
 
 | Symptôme | Action |

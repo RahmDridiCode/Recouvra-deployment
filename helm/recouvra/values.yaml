@@ -12,6 +12,10 @@ namespace:
 # Noms du Secret et de la ConfigMap (le Secret n'est pas géré par ce chart)
 secretName: recouvra-secrets
 
+# Secret de pull GHCR (images privées), créé hors Helm dans le namespace recouvra
+imagePullSecrets:
+  - name: ghcr-secret
+
 config:
   name: recouvra-config
   data:
@@ -23,9 +27,9 @@ config:
 backend:
   replicas: 1
   image:
-    repository: recouvra/backend
+    repository: ghcr.io/rahmdridicode/recouvra-backend
     tag: "v2"
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   port: 3000
   service:
     type: ClusterIP
@@ -80,9 +84,9 @@ backend:
 frontend:
   replicas: 1
   image:
-    repository: recouvra/frontend
+    repository: ghcr.io/rahmdridicode/recouvra-frontend
     tag: "v2"
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   # Sidecar exportant le stub_status nginx (port interne 8081) en métriques Prometheus
   exporter:
     image:

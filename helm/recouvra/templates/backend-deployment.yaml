@@ -17,6 +17,10 @@ spec:
         app.kubernetes.io/name: backend
         {{- include "recouvra.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
         # server.js quitte (exit 1) si MongoDB est injoignable : on attend ici
         # une connexion authentifiée réussie, avec le même MONGO_URI que le backend.

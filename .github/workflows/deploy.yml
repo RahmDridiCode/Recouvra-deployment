@@ -1,0 +1,89 @@
+name: Deploy
+
+on:
+  repository_dispatch:
+    types: [deploy-image]
+
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois, sans annuler celui en cours
+concurrency:
+  group: deploy-recouvra
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 15
+    env:
+      # Valeurs du payload passées par variables d'environnement (jamais interpolées dans le script)
+      COMPONENT: ${{ github.event.client_payload.component }}
+      TAG: ${{ github.event.client_payload.tag }}
+      NAMESPACE: recouvra
+      RELEASE: recouvra
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate payload
+        run: |
+          if ($env:COMPONENT -notin @('backend', 'frontend')) {
+            throw "component invalide : '$($env:COMPONENT)' (attendu : backend ou frontend)"
+          }
+          if ($env:TAG -notmatch '^sha-[0-9a-f]{7,40}$') {
+            throw "tag invalide : '$($env:TAG)' (attendu : sha-<commit>)"
+          }
+          Write-Host "Déploiement de $($env:COMPONENT) avec le tag $($env:TAG)"
+
+      - name: Check Minikube
+        run: |
+          minikube status
+          if ($LASTEXITCODE -ne 0) { throw "Minikube n'est pas démarré (lancer : minikube start --driver=docker)" }
+
+      - name: Check Kubernetes context and namespace
+        run: |
+          $ctx = kubectl config current-context
+          if ($LASTEXITCODE -ne 0) { throw 'Contexte kubectl introuvable' }
+          Write-Host "Contexte : $ctx"
+          if ($ctx -ne 'minikube') { throw "Contexte inattendu '$ctx' (attendu : minikube)" }
+          kubectl get namespace $env:NAMESPACE | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Le namespace '$($env:NAMESPACE)' n'existe pas" }
+          kubectl get secret ghcr-secret -n $env:NAMESPACE | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Le Secret ghcr-secret est absent du namespace '$($env:NAMESPACE)'" }
+          kubectl get secret recouvra-secrets -n $env:NAMESPACE | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Le Secret recouvra-secrets est absent du namespace '$($env:NAMESPACE)'" }
+
+      - name: Helm upgrade (single component)
+        run: |
+          helm lint helm/recouvra
+          if ($LASTEXITCODE -ne 0) { throw 'helm lint a échoué' }
+          # reset-then-reuse-values : valeurs par défaut du chart + tags déjà déployés de l'autre composant
+          # --atomic : retour automatique à la révision précédente en cas d'échec
+          helm upgrade --install $env:RELEASE helm/recouvra `
+            -n $env:NAMESPACE `
+            --reset-then-reuse-values `
+            --set "$($env:COMPONENT).image.tag=$($env:TAG)" `
+            --atomic --timeout 5m
+          if ($LASTEXITCODE -ne 0) { throw 'helm upgrade a échoué (rollback automatique effectué)' }
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status "deployment/$($env:COMPONENT)" -n $env:NAMESPACE --timeout=180s
+          if ($LASTEXITCODE -ne 0) { throw "Le rollout de $($env:COMPONENT) a échoué" }
+
+      - name: Show deployments and pods
+        if: always()
+        run: |
+          kubectl get deployments -n $env:NAMESPACE
+          kubectl get pods -n $env:NAMESPACE
+          helm history $env:RELEASE -n $env:NAMESPACE --max 5
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl describe deployment $env:COMPONENT -n $env:NAMESPACE
+          kubectl get events -n $env:NAMESPACE --sort-by=.lastTimestamp
+          Write-Host "Rollback manuel si besoin : helm rollback $($env:RELEASE) -n $($env:NAMESPACE)"
