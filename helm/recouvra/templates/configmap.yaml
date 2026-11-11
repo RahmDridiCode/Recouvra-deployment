@@ -1,0 +1,13 @@
+# Configuration NON sensible. Les données sensibles sont dans le Secret
+# "{{ .Values.secretName }}" créé hors Helm (scripts/create-secrets.ps1).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.config.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "recouvra.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config.data }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

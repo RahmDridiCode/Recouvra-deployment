@@ -1,0 +1,22 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/name: backend
+    {{- include "recouvra.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.interval }}
+{{- end }}

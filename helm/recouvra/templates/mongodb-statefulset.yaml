@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: mongodb
+    {{- include "recouvra.labels" . | nindent 4 }}
+spec:
+  serviceName: mongodb
+  replicas: {{ .Values.mongodb.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mongodb
+        {{- include "recouvra.labels" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.mongodb.terminationGracePeriodSeconds }}
+      containers:
+        - name: mongodb
+          image: {{ include "recouvra.image" .Values.mongodb.image }}
+          imagePullPolicy: {{ .Values.mongodb.image.pullPolicy }}
+          ports:
+            - name: mongodb
+              containerPort: {{ .Values.mongodb.port }}
+          env:
+            # Appliquées uniquement à la 1re initialisation du volume
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.mongodb.rootUserKey }}
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: {{ .Values.mongodb.rootPasswordKey }}
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          # Prête uniquement quand l'utilisateur root existe et que l'authentification fonctionne
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - >-
+                  mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD"
+                  --authenticationDatabase admin --eval "db.adminCommand('ping').ok"
+            {{- toYaml .Values.mongodb.probes.readiness | nindent 12 }}
+          # Liveness sans authentification : un Secret incohérent ne doit pas provoquer de redémarrages en boucle
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - db.adminCommand('ping').ok
+            {{- toYaml .Values.mongodb.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.mongodb.resources | nindent 12 }}
+  # PVC "data-mongodb-0" généré automatiquement par volumeClaimTemplates
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: mongodb
+          {{- include "recouvra.labels" . | nindent 10 }}
+      spec:
+        accessModes: {{ toJson .Values.mongodb.persistence.accessModes }}
+        {{- with .Values.mongodb.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.mongodb.persistence.size }}

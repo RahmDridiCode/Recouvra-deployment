@@ -1,0 +1,163 @@
+# Valeurs par défaut : valeurs du déploiement Minikube.
+# AUCUN secret ici : le Secret "recouvra-secrets" est créé hors Helm
+# (scripts/create-secrets.ps1) puis référencé par son nom.
+
+# Le namespace est fourni par Helm (-n recouvra --create-namespace).
+# Mettre namespace.create à true pour rendre aussi la ressource Namespace
+# (incompatible avec --create-namespace).
+namespace:
+  create: false
+  name: recouvra
+
+# Noms du Secret et de la ConfigMap (le Secret n'est pas géré par ce chart)
+secretName: recouvra-secrets
+
+config:
+  name: recouvra-config
+  data:
+    PORT: "3000"
+    NODE_ENV: "production"
+    SMTP_HOST: "smtp.gmail.com"
+    SMTP_PORT: "587"
+
+backend:
+  replicas: 1
+  image:
+    repository: recouvra/backend
+    tag: "v2"
+    pullPolicy: Never
+  port: 3000
+  service:
+    type: ClusterIP
+    port: 3000
+  # Variables issues du Secret ; optional: true => absentes si non renseignées
+  secretEnv:
+    - name: MONGO_URI
+    - name: JWT_SECRET
+    - name: SMTP_USER
+      optional: true
+    - name: SMTP_PASS
+      optional: true
+    - name: TWILIO_ACCOUNT_SID
+      optional: true
+    - name: TWILIO_AUTH_TOKEN
+      optional: true
+    - name: TWILIO_PHONE_NUMBER
+      optional: true
+  # initContainer qui attend une connexion MongoDB authentifiée
+  waitForMongodb:
+    image:
+      repository: mongo
+      tag: "7.0"
+      pullPolicy: Never
+  probes:
+    startup:
+      periodSeconds: 3
+      failureThreshold: 30
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 3
+      failureThreshold: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+frontend:
+  replicas: 1
+  image:
+    repository: recouvra/frontend
+    tag: "v2"
+    pullPolicy: Never
+  # Sidecar exportant le stub_status nginx (port interne 8081) en métriques Prometheus
+  exporter:
+    image:
+      repository: nginx/nginx-prometheus-exporter
+      tag: "1.5.3"
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 32Mi
+  port: 80
+  service:
+    type: ClusterIP
+    port: 80
+  # Nginx sans proxy /api (routage assuré par l'Ingress)
+  command: ["nginx", "-c", "/etc/nginx/nginx.k8s.conf", "-g", "daemon off;"]
+  probes:
+    path: /health
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 20
+      timeoutSeconds: 3
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+mongodb:
+  replicas: 1
+  image:
+    repository: mongo
+    tag: "7.0"
+    pullPolicy: Never
+  port: 27017
+  terminationGracePeriodSeconds: 30
+  # Clés du Secret contenant les identifiants root (appliqués à la 1re init du volume)
+  rootUserKey: MONGO_ROOT_USER
+  rootPasswordKey: MONGO_ROOT_PASSWORD
+  persistence:
+    size: 2Gi
+    accessModes: ["ReadWriteOnce"]
+    # storageClass: ""   # vide/absent = StorageClass par défaut (standard sur Minikube)
+  probes:
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+metrics:
+  enabled: true
+  interval: 30s
+
+ingress:
+  enabled: true
+  className: nginx
+  host: recouvra.local
+  annotations: {}

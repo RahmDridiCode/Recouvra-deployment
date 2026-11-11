@@ -1,0 +1,26 @@
+# Release séparée : prometheus-community/prometheus-mongodb-exporter (namespace recouvra)
+# helm upgrade --install mongodb-exporter prometheus-community/prometheus-mongodb-exporter \
+#   --version 3.23.2 -n recouvra -f monitoring/mongo-exporter-values.yaml
+
+# URI (avec identifiants) lue depuis le Secret existant, jamais en clair ici
+existingSecret:
+  name: recouvra-secrets
+  key: MONGO_URI
+
+# Remplace le défaut "--collect-all" (trop lourd) par les 2 collecteurs voulus
+extraArgs:
+  - --collector.diagnosticdata
+  - --collector.dbstats
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  additionalLabels:
+    release: prometheus-stack
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi

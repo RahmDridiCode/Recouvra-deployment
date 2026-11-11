@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: frontend
+    {{- include "recouvra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        {{- include "recouvra.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: {{ include "recouvra.image" .Values.frontend.image }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          # Config Nginx Kubernetes : sert Angular, SANS proxy /api (routé par l'Ingress)
+          command: {{ toJson .Values.frontend.command }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.port }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.frontend.probes.path }}
+              port: http
+            {{- toYaml .Values.frontend.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.frontend.probes.path }}
+              port: http
+            {{- toYaml .Values.frontend.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+        {{- if .Values.metrics.enabled }}
+        - name: nginx-exporter
+          image: {{ include "recouvra.image" .Values.frontend.exporter.image }}
+          imagePullPolicy: {{ .Values.frontend.exporter.image.pullPolicy }}
+          args:
+            - -nginx.scrape-uri=http://127.0.0.1:8081/stub_status
+          ports:
+            - name: metrics
+              containerPort: 9113
+          resources:
+            {{- toYaml .Values.frontend.exporter.resources | nindent 12 }}
+        {{- end }}

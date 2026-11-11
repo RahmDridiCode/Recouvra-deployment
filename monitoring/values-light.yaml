@@ -1,0 +1,37 @@
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 800Mi
+    storageSpec: {}
+
+grafana:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  persistence:
+    enabled: false
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi

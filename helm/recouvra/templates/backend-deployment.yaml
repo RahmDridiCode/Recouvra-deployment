@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: backend
+    {{- include "recouvra.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+        {{- include "recouvra.labels" . | nindent 8 }}
+    spec:
+      initContainers:
+        # server.js quitte (exit 1) si MongoDB est injoignable : on attend ici
+        # une connexion authentifiée réussie, avec le même MONGO_URI que le backend.
+        - name: wait-for-mongodb
+          image: {{ include "recouvra.image" .Values.backend.waitForMongodb.image }}
+          imagePullPolicy: {{ .Values.backend.waitForMongodb.image.pullPolicy }}
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: MONGO_URI
+          command:
+            - sh
+            - -c
+            - |
+              until mongosh "$MONGO_URI" --quiet --eval "db.runCommand({ping:1}).ok" >/dev/null 2>&1; do
+                echo "En attente de MongoDB (connexion authentifiée)..."
+                sleep 3
+              done
+              echo "MongoDB prête."
+      containers:
+        - name: backend
+          image: {{ include "recouvra.image" .Values.backend.image }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.config.name }}
+          env:
+            {{- range .Values.backend.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secretName }}
+                  key: {{ .name }}
+                  {{- if .optional }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+          # GET / renvoie 200 ; l'app n'écoute qu'après connexion à MongoDB
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.backend.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.backend.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.backend.probes.liveness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          # L'image déclare "USER nodejs" (nom) : l'UID numérique est requis pour runAsNonRoot
+          securityContext:
+            {{- toYaml .Values.backend.securityContext | nindent 12 }}

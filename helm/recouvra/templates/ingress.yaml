@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+# Unique point de routage : /api -> backend, / -> frontend (aucune réécriture).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: recouvra
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "recouvra.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

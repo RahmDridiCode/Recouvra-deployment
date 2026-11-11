@@ -1,0 +1,6 @@
+apiVersion: v2
+name: recouvra
+description: Application de recouvrement Recouvra (Angular + Node.js/Express + MongoDB) pour Minikube
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

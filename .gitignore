@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+helm-release-backup.yaml
+*-backup.yaml
+secrets.yaml
+*.pem
+*.key
+kubeconfig*
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
