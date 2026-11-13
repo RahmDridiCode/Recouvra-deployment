@@ -94,7 +94,7 @@ if ($DryRun) {
     return
 }
 
-helm upgrade --install $Release $Chart -n $Namespace --reset-values @setArgs --rollback-on-failure --timeout 5m
+helm upgrade --install $Release $Chart -n $Namespace --reset-values --force-conflicts @setArgs --rollback-on-failure --timeout 5m
 if ($LASTEXITCODE -ne 0) { throw "helm upgrade a échoué (code $LASTEXITCODE) ; rollback automatique effectué par Helm" }
 
 $after = Get-DeploymentImage $other
