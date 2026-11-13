@@ -41,6 +41,14 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data/db
+          startupProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - db.adminCommand('ping').ok
+            {{- toYaml .Values.mongodb.probes.startup | nindent 12 }}
           # Prête uniquement quand l'utilisateur root existe et que l'authentification fonctionne
           readinessProbe:
             exec:

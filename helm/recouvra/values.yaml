@@ -138,15 +138,19 @@ mongodb:
     accessModes: ["ReadWriteOnce"]
     # storageClass: ""   # vide/absent = StorageClass par défaut (standard sur Minikube)
   probes:
+    startup:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 30
     readiness:
       initialDelaySeconds: 10
       periodSeconds: 10
-      timeoutSeconds: 5
+      timeoutSeconds: 10
       failureThreshold: 6
     liveness:
       initialDelaySeconds: 30
       periodSeconds: 20
-      timeoutSeconds: 5
+      timeoutSeconds: 10
       failureThreshold: 3
   resources:
     requests:
