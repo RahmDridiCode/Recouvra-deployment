@@ -108,7 +108,7 @@ push main (recouvra-backend / recouvra-frontend)
 |---|---|
 | Dépôts backend et frontend, *Settings > Secrets > Actions* | secret `DEPLOYMENT_TOKEN` (PAT fine-grained limité à `recouvra-deployment`, permission *Contents: Read and write*) |
 | Dépôts backend et frontend | rien d'autre : `GITHUB_TOKEN` est fourni automatiquement (`packages: write` déclaré dans le workflow) |
-| Dépôt deployment, *Settings > Actions > Runners* | runner self-hosted Windows en ligne, avec `minikube`, `kubectl` et `helm` (≥ 3.14) dans le `PATH` du compte qui l'exécute |
+| Dépôt deployment, *Settings > Actions > Runners* | runner self-hosted Windows en ligne, avec `minikube`, `kubectl` et `helm` (≥ 4) dans le `PATH` du compte qui l'exécute |
 | Cluster, namespace `recouvra` | Secrets `ghcr-secret` (PAT `read:packages`) et `recouvra-secrets` (voir *Secrets*) |
 | GHCR | si le paquet n'est pas lié au dépôt, l'ajouter en accès pour que le PAT puisse le lire |
 
@@ -122,8 +122,9 @@ helm upgrade --install recouvra helm/recouvra -n recouvra `
   --set backend.image.tag=sha-xxxxxxx --set frontend.image.tag=sha-yyyyyyy
 ```
 
-Ensuite chaque push met à jour un seul composant : `--reset-then-reuse-values` conserve le tag déjà déployé de l'autre.
-Si un dispatch arrive avant ce bootstrap, le déploiement échoue et Helm revient en arrière (`--atomic`) : sans conséquence.
+Ensuite chaque push met à jour un seul composant via `scripts/deploy-component.ps1` : pas de `--reuse-values` (les anciennes valeurs stockées par Helm sont ignorées), seul `<composant>.image.tag` est modifié (`--set-string`), et l'image de l'autre composant est figée sur celle réellement en cours d'exécution dans le cluster. Le script vérifie après coup que l'autre Deployment n'a pas changé.
+Test sans toucher au cluster : `./scripts/deploy-component.ps1 -Component backend -Tag sha-abc1234 -DryRun`.
+Si un dispatch arrive avant ce bootstrap, le déploiement échoue et Helm revient en arrière (`--rollback-on-failure`) : sans conséquence.
 
 ### Rollback
 
@@ -133,7 +134,7 @@ helm rollback recouvra <révision> -n recouvra
 kubectl rollout status deployment/backend -n recouvra
 ```
 
-Le déploiement automatique utilise `--atomic` : en cas d'échec ou de timeout (5 min), Helm restaure la révision précédente.
+Le déploiement automatique utilise `--rollback-on-failure` : en cas d'échec ou de timeout (5 min), Helm restaure la révision précédente.
 
 ### Dépannage CI/CD
 
@@ -145,7 +146,7 @@ Le déploiement automatique utilise `--atomic` : en cas d'échec ou de timeout (
 | Contexte kubectl inattendu | Le service du runner n'utilise pas le même `~/.kube/config` que ton compte. |
 | `ImagePullBackOff` / `unauthorized` | `ghcr-secret` absent ou PAT sans `read:packages` ; vérifier que le tag existe sur GHCR. |
 | `ImagePullBackOff` sur le composant non déployé | Bootstrap non fait (tag par défaut `v2` inexistant). |
-| Erreur `helm upgrade` sur `--reset-then-reuse-values` | Helm trop ancien (≥ 3.14 requis). |
+| Erreur `unknown flag: --rollback-on-failure` | Helm trop ancien (Helm 4 requis ; Helm 3 : `--atomic`). |
 
 ## Dépannage
 

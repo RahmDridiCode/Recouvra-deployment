@@ -60,14 +60,9 @@ jobs:
         run: |
           helm lint helm/recouvra
           if ($LASTEXITCODE -ne 0) { throw 'helm lint a échoué' }
-          # reset-then-reuse-values : valeurs par défaut du chart + tags déjà déployés de l'autre composant
-          # --atomic : retour automatique à la révision précédente en cas d'échec
-          helm upgrade --install $env:RELEASE helm/recouvra `
-            -n $env:NAMESPACE `
-            --reset-then-reuse-values `
-            --set "$($env:COMPONENT).image.tag=$($env:TAG)" `
-            --atomic --timeout 5m
-          if ($LASTEXITCODE -ne 0) { throw 'helm upgrade a échoué (rollback automatique effectué)' }
+          # Valeurs du chart (pas de reuse-values) + tag du seul composant reçu ; l'autre composant est figé
+          # sur son image actuelle ; rollback automatique en cas d'échec.
+          ./scripts/deploy-component.ps1 -Component $env:COMPONENT -Tag $env:TAG -Namespace $env:NAMESPACE -Release $env:RELEASE
 
       - name: Wait for rollout
         run: |
